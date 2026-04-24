@@ -9,22 +9,28 @@
     header { background: #0a66c2; color: #fff; padding: 16px 24px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
     header h1 { font-size: 20px; }
     header a { color: #fff; text-decoration: none; font-size: 14px; border: 1px solid #fff; padding: 6px 14px; border-radius: 4px; }
-    .card { background: #fff; padding: 24px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); max-width: 600px; margin: 0 auto; }
-    h2 { color: #333; margin-bottom: 16px; }
-    textarea { width: 100%; height: 120px; border: 1px solid #ddd; border-radius: 6px; padding: 12px; font-size: 15px; resize: vertical; }
-    .actions { display: flex; gap: 12px; margin-top: 12px; }
+    .card { background: #fff; padding: 24px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); max-width: 680px; margin: 0 auto 20px; }
+    h2 { color: #333; margin-bottom: 16px; font-size: 18px; }
+    textarea { width: 100%; height: 110px; border: 1px solid #ddd; border-radius: 6px; padding: 12px; font-size: 15px; resize: vertical; }
+    .post-as { display: flex; gap: 16px; margin: 12px 0; }
+    .post-as label { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+    .post-as input[type="radio"] { accent-color: #0a66c2; }
+    .actions { display: flex; gap: 12px; margin-top: 4px; }
     button { padding: 10px 22px; border: none; border-radius: 24px; font-size: 14px; font-weight: bold; cursor: pointer; }
-    .btn-post { background: #0a66c2; color: #fff; }
-    .btn-post:hover { background: #004182; }
-    .btn-delete { background: #cc1016; color: #fff; }
-    .btn-delete:hover { background: #a00; }
+    .btn-blue { background: #0a66c2; color: #fff; }
+    .btn-blue:hover { background: #004182; }
+    .btn-red { background: #cc1016; color: #fff; }
+    .btn-red:hover { background: #a00; }
+    .btn-green { background: #057642; color: #fff; }
+    .btn-green:hover { background: #046034; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .result { margin-top: 16px; padding: 12px; border-radius: 6px; font-size: 14px; display: none; }
+    .result { margin-top: 14px; padding: 12px; border-radius: 6px; font-size: 14px; display: none; word-break: break-all; }
     .result.success { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
     .result.error { background: #fdecea; color: #b71c1c; border: 1px solid #ef9a9a; }
-    .post-id-section { margin-top: 20px; border-top: 1px solid #eee; padding-top: 16px; }
-    .post-id-section label { font-size: 13px; color: #555; display: block; margin-bottom: 6px; }
-    .post-id-section input { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+    .result.info { background: #e3f2fd; color: #0d47a1; border: 1px solid #90caf9; }
+    label.field-label { font-size: 13px; color: #555; display: block; margin-bottom: 6px; }
+    input[type="text"] { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+    pre { background: #f5f5f5; padding: 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; margin-top: 10px; }
     #userName { font-size: 14px; color: #e0e0e0; }
   </style>
 </head>
@@ -37,42 +43,56 @@
     </div>
   </header>
 
+  <!-- CREATE POST -->
   <div class="card">
     <h2>Create a Post</h2>
     <textarea id="postText" placeholder="What do you want to share on LinkedIn?"></textarea>
+    <div class="post-as">
+      <label><input type="radio" name="postAs" value="personal" checked /> Personal Profile</label>
+      <label style="opacity:0.4;cursor:not-allowed;" title="Requires Community Management API approval from LinkedIn">
+        <input type="radio" name="postAs" value="company" disabled /> Tecofize Company Page (requires LinkedIn approval)
+      </label>
+    </div>
     <div class="actions">
-      <button class="btn-post" id="postBtn" onclick="createPost()">Post to LinkedIn</button>
+      <button class="btn-blue" id="postBtn" onclick="createPost()">Post to LinkedIn</button>
     </div>
-    <div id="result" class="result"></div>
+    <div id="postResult" class="result"></div>
+  </div>
 
-    <div class="post-id-section">
-      <h2 style="margin-bottom:12px;">Delete a Post</h2>
-      <label>Enter Post ID to delete (auto-filled after posting):</label>
-      <input type="text" id="deletePostId" placeholder="urn:li:ugcPost:..." />
-      <div class="actions" style="margin-top:10px;">
-        <button class="btn-delete" id="deleteBtn" onclick="deletePost()">Delete Post</button>
-      </div>
-      <div id="deleteResult" class="result"></div>
+  <!-- GET POST -->
+  <div class="card">
+    <h2>Get Post by ID</h2>
+    <label class="field-label">Post ID (auto-filled after posting):</label>
+    <input type="text" id="getPostId" placeholder="urn:li:share:..." />
+    <div class="actions" style="margin-top:12px;">
+      <button class="btn-green" id="getBtn" onclick="getPost()">Get Post</button>
     </div>
+    <div id="getResult" class="result"></div>
+  </div>
+
+  <!-- DELETE POST -->
+  <div class="card">
+    <h2>Delete a Post</h2>
+    <label class="field-label">Post ID (auto-filled after posting):</label>
+    <input type="text" id="deletePostId" placeholder="urn:li:share:..." />
+    <div class="actions" style="margin-top:12px;">
+      <button class="btn-red" id="deleteBtn" onclick="deletePost()">Delete Post</button>
+    </div>
+    <div id="deleteResult" class="result"></div>
   </div>
 
   <script>
-    // Load user info
-    fetch('/api/me')
-      .then(r => r.json())
-      .then(data => {
-        document.getElementById('userName').textContent = data.name || '';
-      });
+    fetch('/api/me').then(r => r.json()).then(data => {
+      document.getElementById('userName').textContent = data.name || '';
+    });
 
     async function createPost() {
       const text = document.getElementById('postText').value.trim();
-      const resultEl = document.getElementById('result');
+      const postAs = document.querySelector('input[name="postAs"]:checked').value;
+      const resultEl = document.getElementById('postResult');
       const btn = document.getElementById('postBtn');
 
-      if (!text) {
-        showResult(resultEl, 'error', 'Please enter some text to post.');
-        return;
-      }
+      if (!text) return showResult(resultEl, 'error', 'Please enter some text to post.');
 
       btn.disabled = true;
       btn.textContent = 'Posting...';
@@ -81,12 +101,13 @@
         const res = await fetch('/api/post', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({ text, postAs }),
         });
         const data = await res.json();
 
         if (data.success) {
-          showResult(resultEl, 'success', `Post created! Post ID: ${data.postId}`);
+          showResult(resultEl, 'success', `Post created as ${data.postedAs}!\nPost ID: ${data.postId}`);
+          document.getElementById('getPostId').value = data.postId;
           document.getElementById('deletePostId').value = data.postId;
           document.getElementById('postText').value = '';
         } else {
@@ -100,17 +121,42 @@
       btn.textContent = 'Post to LinkedIn';
     }
 
+    async function getPost() {
+      const postId = document.getElementById('getPostId').value.trim();
+      const resultEl = document.getElementById('getResult');
+      const btn = document.getElementById('getBtn');
+
+      if (!postId) return showResult(resultEl, 'error', 'Please enter a Post ID.');
+
+      btn.disabled = true;
+      btn.textContent = 'Fetching...';
+
+      try {
+        const res = await fetch(`/api/post/${encodeURIComponent(postId)}`);
+        const data = await res.json();
+
+        if (data.success) {
+          showResult(resultEl, 'info', 'Post fetched successfully:');
+          resultEl.innerHTML += `<pre>${JSON.stringify(data.post, null, 2)}</pre>`;
+          resultEl.style.display = 'block';
+        } else {
+          showResult(resultEl, 'error', `Error: ${JSON.stringify(data.error)}`);
+        }
+      } catch (e) {
+        showResult(resultEl, 'error', 'Request failed: ' + e.message);
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Get Post';
+    }
+
     async function deletePost() {
       const postId = document.getElementById('deletePostId').value.trim();
       const resultEl = document.getElementById('deleteResult');
       const btn = document.getElementById('deleteBtn');
 
-      if (!postId) {
-        showResult(resultEl, 'error', 'Please enter a Post ID to delete.');
-        return;
-      }
-
-      if (!confirm(`Are you sure you want to delete post:\n${postId}`)) return;
+      if (!postId) return showResult(resultEl, 'error', 'Please enter a Post ID.');
+      if (!confirm(`Are you sure you want to delete:\n${postId}`)) return;
 
       btn.disabled = true;
       btn.textContent = 'Deleting...';
@@ -122,6 +168,7 @@
         if (data.success) {
           showResult(resultEl, 'success', 'Post deleted successfully!');
           document.getElementById('deletePostId').value = '';
+          document.getElementById('getPostId').value = '';
         } else {
           showResult(resultEl, 'error', `Error: ${JSON.stringify(data.error)}`);
         }

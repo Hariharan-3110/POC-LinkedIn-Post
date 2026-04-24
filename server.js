@@ -15,6 +15,11 @@ app.use(session({
 
 const { LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET, REDIRECT_URI, PORT } = process.env;
 const SCOPES = 'openid profile email w_member_social';
+const LINKEDIN_HEADERS = {
+  'Content-Type': 'application/json',
+  'X-Restli-Protocol-Version': '2.0.0',
+  'LinkedIn-Version': '202604',
+};
 
 // Step 1: Redirect user to LinkedIn OAuth
 app.get('/auth/linkedin', (req, res) => {
@@ -25,10 +30,7 @@ app.get('/auth/linkedin', (req, res) => {
 // Step 2: LinkedIn redirects back with code
 app.get('/auth/linkedin/callback', async (req, res) => {
   const { code, error } = req.query;
-
-  if (error) {
-    return res.redirect(`/?error=${error}`);
-  }
+  if (error) return res.redirect(`/?error=${error}`);
 
   try {
     const tokenRes = await axios.post('https://www.linkedin.com/oauth/v2/accessToken', null, {
@@ -44,7 +46,6 @@ app.get('/auth/linkedin/callback', async (req, res) => {
 
     req.session.accessToken = tokenRes.data.access_token;
 
-    // Fetch user profile (sub = LinkedIn user URN)
     const profileRes = await axios.get('https://api.linkedin.com/v2/userinfo', {
       headers: { Authorization: `Bearer ${req.session.accessToken}` },
     });
@@ -71,36 +72,36 @@ app.get('/api/me', (req, res) => {
   res.json({ name: req.session.userName, sub: req.session.userSub });
 });
 
-// API: Create a post (text only)
+// API: Create a post (personal or company page)
 app.post('/api/post', async (req, res) => {
   if (!req.session.accessToken) return res.status(401).json({ error: 'Not authenticated' });
 
-  const { text } = req.body;
+  const { text, postAs } = req.body;
   if (!text || !text.trim()) return res.status(400).json({ error: 'Post text is required' });
 
-  const authorUrn = `urn:li:person:${req.session.userSub}`;
+  const authorUrn = postAs === 'company'
+    ? `urn:li:organization:${process.env.LINKEDIN_COMPANY_ID}`
+    : `urn:li:person:${req.session.userSub}`;
 
   try {
     const response = await axios.post(
-      'https://api.linkedin.com/v2/ugcPosts',
+      'https://api.linkedin.com/rest/posts',
       {
         author: authorUrn,
+        commentary: text.trim(),
+        visibility: 'PUBLIC',
+        distribution: {
+          feedDistribution: 'MAIN_FEED',
+          targetEntities: [],
+          thirdPartyDistributionChannels: [],
+        },
         lifecycleState: 'PUBLISHED',
-        specificContent: {
-          'com.linkedin.ugc.ShareContent': {
-            shareCommentary: { text: text.trim() },
-            shareMediaCategory: 'NONE',
-          },
-        },
-        visibility: {
-          'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC',
-        },
+        isReshareDisabledByAuthor: false,
       },
       {
         headers: {
           Authorization: `Bearer ${req.session.accessToken}`,
-          'Content-Type': 'application/json',
-          'X-Restli-Protocol-Version': '2.0.0',
+          ...LINKEDIN_HEADERS,
         },
       }
     );
@@ -108,9 +109,34 @@ app.post('/api/post', async (req, res) => {
     const postId = response.headers['x-restli-id'] || response.data.id;
     req.session.lastPostId = postId;
 
-    res.json({ success: true, postId });
+    const postedAs = postAs === 'company' ? 'Tecofize Company Page' : 'Personal Profile';
+    res.json({ success: true, postId, postedAs });
   } catch (err) {
     console.error('Post error:', err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data || err.message });
+  }
+});
+
+// API: Get a post by ID
+app.get('/api/post/:postId', async (req, res) => {
+  if (!req.session.accessToken) return res.status(401).json({ error: 'Not authenticated' });
+
+  const postId = decodeURIComponent(req.params.postId);
+
+  try {
+    const response = await axios.get(
+      `https://api.linkedin.com/rest/posts/${encodeURIComponent(postId)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${req.session.accessToken}`,
+          ...LINKEDIN_HEADERS,
+        },
+      }
+    );
+
+    res.json({ success: true, post: response.data });
+  } catch (err) {
+    console.error('Get post error:', err.response?.data || err.message);
     res.status(500).json({ error: err.response?.data || err.message });
   }
 });
@@ -122,10 +148,10 @@ app.delete('/api/post/:postId', async (req, res) => {
   const postId = decodeURIComponent(req.params.postId);
 
   try {
-    await axios.delete(`https://api.linkedin.com/v2/ugcPosts/${encodeURIComponent(postId)}`, {
+    await axios.delete(`https://api.linkedin.com/rest/posts/${encodeURIComponent(postId)}`, {
       headers: {
         Authorization: `Bearer ${req.session.accessToken}`,
-        'X-Restli-Protocol-Version': '2.0.0',
+        ...LINKEDIN_HEADERS,
       },
     });
 
