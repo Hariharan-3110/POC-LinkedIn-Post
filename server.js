@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const axios = require('axios');
+const multer = require('multer');
+const fs = require('fs');
 
 const app = express();
 app.use(express.json());
@@ -12,6 +14,8 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
 }));
+
+const upload = multer({ dest: 'uploads/' });
 
 const { LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET, REDIRECT_URI, PORT } = process.env;
 const SCOPES = 'openid profile email w_member_social';
@@ -72,32 +76,81 @@ app.get('/api/me', (req, res) => {
   res.json({ name: req.session.userName, sub: req.session.userSub });
 });
 
-// API: Create a post (personal or company page)
-app.post('/api/post', async (req, res) => {
+// API: Upload image to LinkedIn and return asset URN
+async function uploadImageToLinkedIn(accessToken, authorUrn, filePath, mimeType) {
+  // Step 1: Initialize image upload
+  const initRes = await axios.post(
+    'https://api.linkedin.com/rest/images?action=initializeUpload',
+    { initializeUploadRequest: { owner: authorUrn } },
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...LINKEDIN_HEADERS,
+      },
+    }
+  );
+
+  const { uploadUrl, image } = initRes.data.value;
+
+  // Step 2: Upload the actual image binary
+  const imageBuffer = fs.readFileSync(filePath);
+  await axios.put(uploadUrl, imageBuffer, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': mimeType,
+    },
+  });
+
+  return image; // asset URN e.g. urn:li:image:xxxx
+}
+
+// API: Create a post (text only or with image)
+app.post('/api/post', upload.single('image'), async (req, res) => {
   if (!req.session.accessToken) return res.status(401).json({ error: 'Not authenticated' });
 
   const { text, postAs } = req.body;
   if (!text || !text.trim()) return res.status(400).json({ error: 'Post text is required' });
 
-  const authorUrn = postAs === 'company'
-    ? `urn:li:organization:${process.env.LINKEDIN_COMPANY_ID}`
-    : `urn:li:person:${req.session.userSub}`;
+  const authorUrn = `urn:li:person:${req.session.userSub}`;
 
   try {
+    let postBody = {
+      author: authorUrn,
+      commentary: text.trim(),
+      visibility: 'PUBLIC',
+      distribution: {
+        feedDistribution: 'MAIN_FEED',
+        targetEntities: [],
+        thirdPartyDistributionChannels: [],
+      },
+      lifecycleState: 'PUBLISHED',
+      isReshareDisabledByAuthor: false,
+    };
+
+    // If image uploaded, attach it
+    if (req.file) {
+      const mimeType = req.file.mimetype;
+      const imageUrn = await uploadImageToLinkedIn(
+        req.session.accessToken,
+        authorUrn,
+        req.file.path,
+        mimeType
+      );
+
+      postBody.content = {
+        media: {
+          altText: text.trim(),
+          id: imageUrn,
+        },
+      };
+
+      // Cleanup temp file
+      fs.unlinkSync(req.file.path);
+    }
+
     const response = await axios.post(
       'https://api.linkedin.com/rest/posts',
-      {
-        author: authorUrn,
-        commentary: text.trim(),
-        visibility: 'PUBLIC',
-        distribution: {
-          feedDistribution: 'MAIN_FEED',
-          targetEntities: [],
-          thirdPartyDistributionChannels: [],
-        },
-        lifecycleState: 'PUBLISHED',
-        isReshareDisabledByAuthor: false,
-      },
+      postBody,
       {
         headers: {
           Authorization: `Bearer ${req.session.accessToken}`,
@@ -109,9 +162,9 @@ app.post('/api/post', async (req, res) => {
     const postId = response.headers['x-restli-id'] || response.data.id;
     req.session.lastPostId = postId;
 
-    const postedAs = postAs === 'company' ? 'Tecofize Company Page' : 'Personal Profile';
-    res.json({ success: true, postId, postedAs });
+    res.json({ success: true, postId, hasImage: !!req.file });
   } catch (err) {
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     console.error('Post error:', err.response?.data || err.message);
     res.status(500).json({ error: err.response?.data || err.message });
   }

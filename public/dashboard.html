@@ -32,6 +32,12 @@
     input[type="text"] { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
     pre { background: #f5f5f5; padding: 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; margin-top: 10px; }
     #userName { font-size: 14px; color: #e0e0e0; }
+    .image-upload-area { border: 2px dashed #ddd; border-radius: 8px; padding: 16px; text-align: center; cursor: pointer; margin: 12px 0; transition: border-color 0.2s; }
+    .image-upload-area:hover { border-color: #0a66c2; }
+    .image-upload-area.has-image { border-color: #057642; background: #f0fff4; }
+    .image-upload-area input[type="file"] { display: none; }
+    .image-preview { max-width: 100%; max-height: 200px; border-radius: 6px; margin-top: 10px; display: none; }
+    .remove-image { background: none; border: none; color: #cc1016; font-size: 13px; cursor: pointer; margin-top: 6px; padding: 0; border-radius: 0; font-weight: normal; }
   </style>
 </head>
 <body>
@@ -47,11 +53,17 @@
   <div class="card">
     <h2>Create a Post</h2>
     <textarea id="postText" placeholder="What do you want to share on LinkedIn?"></textarea>
-    <div class="post-as">
-      <label><input type="radio" name="postAs" value="personal" checked /> Personal Profile</label>
-      <label style="opacity:0.4;cursor:not-allowed;" title="Requires Community Management API approval from LinkedIn">
-        <input type="radio" name="postAs" value="company" disabled /> Tecofize Company Page (requires LinkedIn approval)
-      </label>
+    <!-- Image Upload -->
+    <div class="image-upload-area" id="uploadArea" onclick="document.getElementById('imageInput').click()">
+      <input type="file" id="imageInput" accept="image/jpeg,image/png,image/gif" onchange="handleImageSelect(event)" />
+      <div id="uploadPrompt">
+        <div style="font-size:28px;">🖼️</div>
+        <div style="color:#555;font-size:14px;margin-top:6px;">Click to add an image (JPG, PNG, GIF)</div>
+        <div style="color:#aaa;font-size:12px;">Optional</div>
+      </div>
+      <img id="imagePreview" class="image-preview" alt="Preview" />
+      <div id="imageName" style="font-size:13px;color:#057642;margin-top:6px;display:none;"></div>
+      <button class="remove-image" id="removeImageBtn" onclick="removeImage(event)" style="display:none;">Remove image</button>
     </div>
     <div class="actions">
       <button class="btn-blue" id="postBtn" onclick="createPost()">Post to LinkedIn</button>
@@ -86,30 +98,71 @@
       document.getElementById('userName').textContent = data.name || '';
     });
 
+    function handleImageSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const preview = document.getElementById('imagePreview');
+      const uploadArea = document.getElementById('uploadArea');
+      const uploadPrompt = document.getElementById('uploadPrompt');
+      const imageName = document.getElementById('imageName');
+      const removeBtn = document.getElementById('removeImageBtn');
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        preview.src = e.target.result;
+        preview.style.display = 'block';
+        uploadPrompt.style.display = 'none';
+        imageName.textContent = file.name;
+        imageName.style.display = 'block';
+        removeBtn.style.display = 'inline-block';
+        uploadArea.classList.add('has-image');
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function removeImage(event) {
+      event.stopPropagation();
+      document.getElementById('imageInput').value = '';
+      document.getElementById('imagePreview').style.display = 'none';
+      document.getElementById('imagePreview').src = '';
+      document.getElementById('uploadPrompt').style.display = 'block';
+      document.getElementById('imageName').style.display = 'none';
+      document.getElementById('removeImageBtn').style.display = 'none';
+      document.getElementById('uploadArea').classList.remove('has-image');
+    }
+
     async function createPost() {
       const text = document.getElementById('postText').value.trim();
-      const postAs = document.querySelector('input[name="postAs"]:checked').value;
       const resultEl = document.getElementById('postResult');
       const btn = document.getElementById('postBtn');
+      const imageFile = document.getElementById('imageInput').files[0];
 
       if (!text) return showResult(resultEl, 'error', 'Please enter some text to post.');
 
       btn.disabled = true;
-      btn.textContent = 'Posting...';
+      btn.textContent = imageFile ? 'Uploading image & posting...' : 'Posting...';
 
       try {
+        const formData = new FormData();
+        formData.append('text', text);
+        if (imageFile) formData.append('image', imageFile);
+
         const res = await fetch('/api/post', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, postAs }),
+          body: formData,
         });
         const data = await res.json();
 
         if (data.success) {
-          showResult(resultEl, 'success', `Post created as ${data.postedAs}!\nPost ID: ${data.postId}`);
+          const msg = data.hasImage
+            ? `Post with image created! Post ID: ${data.postId}`
+            : `Post created! Post ID: ${data.postId}`;
+          showResult(resultEl, 'success', msg);
           document.getElementById('getPostId').value = data.postId;
           document.getElementById('deletePostId').value = data.postId;
           document.getElementById('postText').value = '';
+          removeImage({ stopPropagation: () => {} });
         } else {
           showResult(resultEl, 'error', `Error: ${JSON.stringify(data.error)}`);
         }
